@@ -22,6 +22,9 @@ struct Args {
 
     #[arg(short = 'w', long)]
     file_path: Option<String>,
+
+    #[arg(long = "name-only")]
+    name_only: bool,
 }
 
 fn main() {
@@ -66,13 +69,17 @@ fn main() {
             Entry::File { .. } => unimplemented!(),
             Entry::Tree { entries } => {
                 for entry in entries {
-                    println!(
-                        "{} {} {}\t{}",
-                        entry.perm,
-                        entry.perm_to_string(),
-                        entry.hash.hash,
-                        entry.filename
-                    );
+                    if args.name_only {
+                        println!("{}", entry.filename);
+                    } else {
+                        println!(
+                            "{} {} {}\t{}",
+                            entry.perm,
+                            entry.perm_to_string(),
+                            entry.hash.hash,
+                            entry.filename
+                        );
+                    }
                 }
             }
         },
