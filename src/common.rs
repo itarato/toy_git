@@ -1,6 +1,6 @@
 use std::{
     fs::{self, File},
-    io::Read,
+    io::{Read, Write},
 };
 
 use flate2::read::ZlibDecoder;
@@ -25,15 +25,39 @@ impl Hash {
         Self { hash }
     }
 
+    pub(crate) fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+
+        let mut i = 0;
+        while i < self.hash.len() {
+            bytes.push(u8::from_str_radix(&self.hash[i..i + 2], 16).unwrap());
+            i += 2;
+        }
+
+        bytes
+    }
+
     pub(crate) fn folder_path(&self) -> String {
         let prefix = &self.hash[0..2];
         format!(".git/objects/{}", prefix)
+    }
+
+    fn ensure_folder_exist(&self) {
+        let prefix = &self.hash[0..2];
+        let path = format!(".git/objects/{}", prefix);
+        std::fs::create_dir_all(&path).unwrap();
     }
 
     pub(crate) fn file_path(&self) -> String {
         let prefix = &self.hash[0..2];
         let filename = &self.hash[2..];
         format!(".git/objects/{}/{}", prefix, filename)
+    }
+
+    pub(crate) fn write_content(&self, content: &[u8]) {
+        self.ensure_folder_exist();
+        let mut file = File::create(self.file_path()).unwrap();
+        file.write_all(content).unwrap();
     }
 
     pub(crate) fn read(&self) -> Entry {
@@ -93,10 +117,11 @@ impl Hash {
 }
 
 pub(crate) fn read_file_into_encoded_blob(file_path: &str) -> Vec<u8> {
-    let mut content_suffix = fs::read_to_string(file_path).unwrap().as_bytes().to_vec();
-    let mut content = format!("blob {}\0", content_suffix.len())
-        .as_bytes()
-        .to_vec();
+    let mut file = fs::File::open(file_path).unwrap();
+    let mut content_suffix = vec![];
+    file.read_to_end(&mut content_suffix).unwrap();
+    let mut content = format!("blob {}", content_suffix.len()).as_bytes().to_vec();
+    content.push(0);
     content.append(&mut content_suffix);
 
     content

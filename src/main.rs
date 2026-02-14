@@ -48,21 +48,8 @@ fn main() {
         },
 
         "hash-object" => {
-            let content = read_file_into_encoded_blob(&args.file_path.unwrap());
-
-            let mut hasher = Sha1::new();
-            hasher.update(&content);
-            let hash = Hash::new(bytes_to_string(&hasher.finalize()));
-
+            let hash = write_blob(&args.file_path.unwrap());
             println!("{}", hash.hash);
-
-            fs::create_dir_all(hash.folder_path()).unwrap();
-
-            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(&content).unwrap();
-            let content_encoded = encoder.finish().unwrap();
-
-            fs::write(hash.file_path(), content_encoded).unwrap();
         }
 
         "ls-tree" => match Hash::new(args.object_hash.unwrap()).read() {
@@ -84,8 +71,79 @@ fn main() {
             }
         },
 
+        "write-tree" => {
+            let hash = write_tree("./");
+            println!("{}", hash.hash);
+        }
+
         other => {
             error!("unknown command: {}", other)
         }
     }
+}
+
+fn write_blob(file_path: &str) -> Hash {
+    let content = read_file_into_encoded_blob(file_path);
+
+    let mut hasher = Sha1::new();
+    hasher.update(&content);
+    let hash = Hash::new(bytes_to_string(&hasher.finalize()));
+
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&content).unwrap();
+    let content_encoded = encoder.finish().unwrap();
+
+    hash.write_content(&content_encoded[..]);
+
+    hash
+}
+
+fn write_tree(dir: &str) -> Hash {
+    let mut entries = fs::read_dir(dir)
+        .unwrap()
+        .flat_map(|entry| {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.file_name().unwrap().to_string_lossy() == ".git" {
+                return vec![];
+            }
+
+            let metadata = fs::metadata(&path).unwrap();
+
+            let mut bytes = vec![];
+
+            if metadata.is_dir() {
+                let hash = write_tree(&path.to_string_lossy());
+
+                bytes.extend_from_slice(b"40000 ");
+                bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
+                bytes.push(0);
+                bytes.extend_from_slice(&hash.as_bytes());
+                bytes
+            } else {
+                let hash = write_blob(&path.to_string_lossy());
+
+                bytes.extend_from_slice(b"100644 ");
+                bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
+                bytes.push(0);
+                bytes.extend_from_slice(&hash.as_bytes());
+                bytes
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let mut bytes = format!("tree {}\0", entries.len()).as_bytes().to_vec();
+    bytes.append(&mut entries);
+
+    let mut hasher = Sha1::new();
+    hasher.update(&bytes);
+    let hash = Hash::new(bytes_to_string(&hasher.finalize()));
+
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&bytes).unwrap();
+    let content_encoded = encoder.finish().unwrap();
+
+    hash.write_content(&content_encoded[..]);
+
+    hash
 }
