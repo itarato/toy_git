@@ -4,7 +4,7 @@ extern crate log;
 use clap::Parser;
 use flate2::{Compression, write::ZlibEncoder};
 use sha1::{Digest, Sha1};
-use std::{fs, io::Write};
+use std::{collections::BTreeMap, fs, io::Write};
 
 use crate::common::{Entry, Hash, bytes_to_string, read_file_into_encoded_blob};
 
@@ -99,37 +99,46 @@ fn write_blob(file_path: &str) -> Hash {
 }
 
 fn write_tree(dir: &str) -> Hash {
-    let mut entries = fs::read_dir(dir)
-        .unwrap()
-        .flat_map(|entry| {
-            let entry = entry.unwrap();
-            let path = entry.path();
-            if path.file_name().unwrap().to_string_lossy() == ".git" {
-                return vec![];
-            }
+    let mut folder_entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 
-            let metadata = fs::metadata(&path).unwrap();
+    for entry in fs::read_dir(dir).unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.file_name().unwrap().to_string_lossy() == ".git" {
+            continue;
+        }
 
-            let mut bytes = vec![];
+        let metadata = fs::metadata(&path).unwrap();
 
-            if metadata.is_dir() {
-                let hash = write_tree(&path.to_string_lossy());
+        let mut bytes = vec![];
 
-                bytes.extend_from_slice(b"40000 ");
-                bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
-                bytes.push(0);
-                bytes.extend_from_slice(&hash.as_bytes());
-                bytes
-            } else {
-                let hash = write_blob(&path.to_string_lossy());
+        let bytes = if metadata.is_dir() {
+            let hash = write_tree(&path.to_string_lossy());
 
-                bytes.extend_from_slice(b"100644 ");
-                bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
-                bytes.push(0);
-                bytes.extend_from_slice(&hash.as_bytes());
-                bytes
-            }
-        })
+            bytes.extend_from_slice(b"40000 ");
+            bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
+            bytes.push(0);
+            bytes.extend_from_slice(&hash.as_bytes());
+            bytes
+        } else {
+            let hash = write_blob(&path.to_string_lossy());
+
+            bytes.extend_from_slice(b"100644 ");
+            bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
+            bytes.push(0);
+            bytes.extend_from_slice(&hash.as_bytes());
+            bytes
+        };
+
+        folder_entries.insert(
+            path.file_name().unwrap().to_string_lossy().to_string(),
+            bytes,
+        );
+    }
+
+    let mut entries = folder_entries
+        .into_values()
+        .flat_map(|e| e)
         .collect::<Vec<_>>();
 
     let mut bytes = format!("tree {}\0", entries.len()).as_bytes().to_vec();
