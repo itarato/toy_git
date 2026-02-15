@@ -37,15 +37,13 @@ impl Hash {
         bytes
     }
 
-    pub(crate) fn folder_path(&self) -> String {
+    fn folder_path(&self) -> String {
         let prefix = &self.hash[0..2];
         format!(".git/objects/{}", prefix)
     }
 
     fn ensure_folder_exist(&self) {
-        let prefix = &self.hash[0..2];
-        let path = format!(".git/objects/{}", prefix);
-        std::fs::create_dir_all(&path).unwrap();
+        std::fs::create_dir_all(&self.folder_path()).unwrap();
     }
 
     pub(crate) fn file_path(&self) -> String {

@@ -18,13 +18,16 @@ struct Args {
     object_hash: Option<String>,
 
     #[arg(short = 'p', long)]
-    cat_file_hash: Option<String>,
+    parent_hash: Option<String>,
 
     #[arg(short = 'w', long)]
     file_path: Option<String>,
 
     #[arg(long = "name-only")]
     name_only: bool,
+
+    #[arg(short, long)]
+    message: Option<String>,
 }
 
 fn main() {
@@ -42,7 +45,7 @@ fn main() {
             info!("Initialized git directory")
         }
 
-        "cat-file" => match Hash::new(args.cat_file_hash.unwrap()).read() {
+        "cat-file" => match Hash::new(args.parent_hash.unwrap()).read() {
             Entry::File { content } => print!("{}", content),
             Entry::Tree { .. } => unimplemented!(),
         },
@@ -76,26 +79,61 @@ fn main() {
             println!("{}", hash.hash);
         }
 
+        "commit-tree" => {
+            // commit <size>\0tree <tree_sha>
+            // parent <parent_sha>
+            // author <name> <<email>> <timestamp> <timezone>
+            // committer <name> <<email>> <timestamp> <timezone>
+
+            // <commit message>
+
+            let mut suffix = vec![];
+
+            let tree_hash = write_tree("./");
+            suffix.extend_from_slice(b"tree ");
+            suffix.extend_from_slice(tree_hash.hash.as_bytes());
+            suffix.push(b'\n');
+
+            suffix.extend_from_slice(b"parent ");
+            suffix.extend_from_slice(args.parent_hash.unwrap().as_bytes());
+            suffix.push(b'\n');
+
+            suffix.extend_from_slice(b"author John Doe <john@example.com> 1234567890 +0000\n");
+            suffix.extend_from_slice(b"committer John Doe <john@example.com> 1234567890 +0000\n\n");
+
+            suffix.extend_from_slice(args.message.unwrap().as_bytes());
+            suffix.push(b'\n');
+
+            let mut content = format!("commit {}\0", suffix.len()).as_bytes().to_vec();
+
+            content.append(&mut suffix);
+
+            let hash = write_payload(content);
+            println!("{}", hash.hash);
+        }
+
         other => {
             error!("unknown command: {}", other)
         }
     }
 }
 
-fn write_blob(file_path: &str) -> Hash {
-    let content = read_file_into_encoded_blob(file_path);
-
+fn write_payload(payload: Vec<u8>) -> Hash {
     let mut hasher = Sha1::new();
-    hasher.update(&content);
+    hasher.update(&payload);
     let hash = Hash::new(bytes_to_string(&hasher.finalize()));
 
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&content).unwrap();
+    encoder.write_all(&payload).unwrap();
     let content_encoded = encoder.finish().unwrap();
 
     hash.write_content(&content_encoded[..]);
 
     hash
+}
+
+fn write_blob(file_path: &str) -> Hash {
+    write_payload(read_file_into_encoded_blob(file_path))
 }
 
 fn write_tree(dir: &str) -> Hash {
@@ -144,15 +182,5 @@ fn write_tree(dir: &str) -> Hash {
     let mut bytes = format!("tree {}\0", entries.len()).as_bytes().to_vec();
     bytes.append(&mut entries);
 
-    let mut hasher = Sha1::new();
-    hasher.update(&bytes);
-    let hash = Hash::new(bytes_to_string(&hasher.finalize()));
-
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&bytes).unwrap();
-    let content_encoded = encoder.finish().unwrap();
-
-    hash.write_content(&content_encoded[..]);
-
-    hash
+    write_payload(bytes)
 }
