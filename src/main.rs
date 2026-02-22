@@ -6,7 +6,9 @@ use flate2::{Compression, write::ZlibEncoder};
 use sha1::{Digest, Sha1};
 use std::{collections::BTreeMap, fs, io::Write};
 
-use crate::common::{Entry, Hash, bytes_to_string, read_file_into_encoded_blob};
+use crate::common::{
+    Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob,
+};
 
 mod common;
 mod reader;
@@ -142,6 +144,42 @@ fn main() {
         }
 
         CliCommand::Clone { url, dir } => {
+            let get_head_sha_url = format!(
+                "{}{}",
+                url.trim_end_matches('/'),
+                "/info/refs?service=git-upload-pack"
+            );
+            let response = reqwest::blocking::get(get_head_sha_url).unwrap();
+            let response_body = response.text().unwrap();
+
+            debug!("SHA reponse body: {}", response_body);
+
+            let lines = response_body.lines().collect::<Vec<_>>();
+            let sha1_head_str = lines[1][8..48].to_string();
+            debug!("Clone sha1_head: {}", sha1_head_str);
+
+            let want_content = format!(
+                "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
+                sha1_head_str
+            );
+            let want_payload = format!("{}00000009done", hex_len_prefixed_string(&want_content));
+
+            debug!("Request payload: {}", want_payload);
+
+            let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
+            let client = reqwest::blocking::Client::new();
+            let response = client
+                .post(&want_url)
+                .header("Content-Type", "application/x-git-upload-pack-request")
+                .body(want_payload)
+                .send()
+                .unwrap();
+            debug!("Response status: {:?}", response.status());
+            debug!("Response headers: {:?}", response.headers());
+            let response_body = response.text().unwrap();
+
+            debug!("Clone POST response: {}", response_body);
+
             unimplemented!()
         }
     }

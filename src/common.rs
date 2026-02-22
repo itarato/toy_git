@@ -15,6 +15,10 @@ pub(crate) fn bytes_to_string(bytes: &[u8]) -> String {
         .join("")
 }
 
+pub(crate) fn hex_len_prefixed_string(s: &str) -> String {
+    format!("{:04x}{}", s.len() + 4, s)
+}
+
 #[derive(Debug)]
 pub(crate) struct Hash {
     pub(crate) hash: String,
@@ -152,10 +156,15 @@ pub(crate) enum Entry {
 
 #[cfg(test)]
 mod test {
-    use crate::common::bytes_to_string;
+    use crate::common::{bytes_to_string, hex_len_prefixed_string};
 
     #[test]
     fn test_bytes_to_string() {
         assert_eq!("0314a3", bytes_to_string(&[0x03, 0x14, 0xa3]));
+    }
+
+    #[test]
+    fn test() {
+        assert_eq!("000a123456", hex_len_prefixed_string("123456"));
     }
 }
