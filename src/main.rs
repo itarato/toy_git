@@ -38,6 +38,10 @@ enum CliCommand {
         #[arg(short, long)]
         message: String,
     },
+    Clone {
+        url: String,
+        dir: String,
+    },
 }
 
 #[derive(Parser)]
@@ -135,6 +139,10 @@ fn main() {
 
             let hash = write_payload(content);
             println!("{}", hash.hash);
+        }
+
+        CliCommand::Clone { url, dir } => {
+            unimplemented!()
         }
     }
 }
