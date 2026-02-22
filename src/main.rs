@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate log;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use flate2::{Compression, write::ZlibEncoder};
 use sha1::{Digest, Sha1};
 use std::{collections::BTreeMap, fs, io::Write};
@@ -11,23 +11,41 @@ use crate::common::{Entry, Hash, bytes_to_string, read_file_into_encoded_blob};
 mod common;
 mod reader;
 
+#[derive(Subcommand)]
+enum CliCommand {
+    Init,
+    CatFile {
+        #[arg(short = 'p', long)]
+        parent_hash: String,
+    },
+    HashObject {
+        #[arg(short = 'w', long)]
+        file_path: String,
+    },
+    LsTree {
+        object_hash: String,
+
+        #[arg(long = "name-only")]
+        name_only: bool,
+    },
+    WriteTree,
+    CommitTree {
+        tree_hash: String,
+
+        #[arg(short = 'p', long)]
+        parent_hash: String,
+
+        #[arg(short, long)]
+        message: String,
+    },
+}
+
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
+#[command(propagate_version = true)]
 struct Args {
-    command: String,
-    object_hash: Option<String>,
-
-    #[arg(short = 'p', long)]
-    parent_hash: Option<String>,
-
-    #[arg(short = 'w', long)]
-    file_path: Option<String>,
-
-    #[arg(long = "name-only")]
-    name_only: bool,
-
-    #[arg(short, long)]
-    message: Option<String>,
+    #[command(subcommand)]
+    command: CliCommand,
 }
 
 fn main() {
@@ -36,8 +54,8 @@ fn main() {
 
     let args = Args::parse();
 
-    match args.command.as_str() {
-        "init" => {
+    match args.command {
+        CliCommand::Init => {
             fs::create_dir(".git").unwrap();
             fs::create_dir(".git/objects").unwrap();
             fs::create_dir(".git/refs").unwrap();
@@ -45,21 +63,24 @@ fn main() {
             info!("Initialized git directory")
         }
 
-        "cat-file" => match Hash::new(args.parent_hash.unwrap()).read() {
+        CliCommand::CatFile { parent_hash } => match Hash::new(parent_hash).read() {
             Entry::File { content } => print!("{}", content),
             Entry::Tree { .. } => unimplemented!(),
         },
 
-        "hash-object" => {
-            let hash = write_blob(&args.file_path.unwrap());
+        CliCommand::HashObject { file_path } => {
+            let hash = write_blob(&file_path);
             println!("{}", hash.hash);
         }
 
-        "ls-tree" => match Hash::new(args.object_hash.unwrap()).read() {
+        CliCommand::LsTree {
+            object_hash,
+            name_only,
+        } => match Hash::new(object_hash).read() {
             Entry::File { .. } => unimplemented!(),
             Entry::Tree { entries } => {
                 for entry in entries {
-                    if args.name_only {
+                    if name_only {
                         println!("{}", entry.filename);
                     } else {
                         println!(
@@ -74,12 +95,16 @@ fn main() {
             }
         },
 
-        "write-tree" => {
+        CliCommand::WriteTree => {
             let hash = write_tree("./");
             println!("{}", hash.hash);
         }
 
-        "commit-tree" => {
+        CliCommand::CommitTree {
+            parent_hash,
+            message,
+            ..
+        } => {
             // commit <size>\0tree <tree_sha>
             // parent <parent_sha>
             // author <name> <<email>> <timestamp> <timezone>
@@ -95,13 +120,13 @@ fn main() {
             suffix.push(b'\n');
 
             suffix.extend_from_slice(b"parent ");
-            suffix.extend_from_slice(args.parent_hash.unwrap().as_bytes());
+            suffix.extend_from_slice(parent_hash.as_bytes());
             suffix.push(b'\n');
 
             suffix.extend_from_slice(b"author John Doe <john@example.com> 1234567890 +0000\n");
             suffix.extend_from_slice(b"committer John Doe <john@example.com> 1234567890 +0000\n\n");
 
-            suffix.extend_from_slice(args.message.unwrap().as_bytes());
+            suffix.extend_from_slice(message.as_bytes());
             suffix.push(b'\n');
 
             let mut content = format!("commit {}\0", suffix.len()).as_bytes().to_vec();
@@ -110,10 +135,6 @@ fn main() {
 
             let hash = write_payload(content);
             println!("{}", hash.hash);
-        }
-
-        other => {
-            error!("unknown command: {}", other)
         }
     }
 }
