@@ -3,6 +3,7 @@ extern crate log;
 
 use clap::{Parser, Subcommand};
 use flate2::{Compression, write::ZlibEncoder};
+use futures_util::StreamExt;
 use sha1::{Digest, Sha1};
 use std::{collections::BTreeMap, fs, io::Write};
 
@@ -54,7 +55,8 @@ struct Args {
     command: CliCommand,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
@@ -149,8 +151,8 @@ fn main() {
                 url.trim_end_matches('/'),
                 "/info/refs?service=git-upload-pack"
             );
-            let response = reqwest::blocking::get(get_head_sha_url).unwrap();
-            let response_body = response.text().unwrap();
+            let response = reqwest::get(get_head_sha_url).await.unwrap();
+            let response_body = response.text().await.unwrap();
 
             debug!("SHA reponse body: {}", response_body);
 
@@ -167,18 +169,43 @@ fn main() {
             debug!("Request payload: {}", want_payload);
 
             let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
-            let client = reqwest::blocking::Client::new();
+            let client = reqwest::Client::new();
             let response = client
                 .post(&want_url)
                 .header("Content-Type", "application/x-git-upload-pack-request")
                 .body(want_payload)
                 .send()
+                .await
                 .unwrap();
-            debug!("Response status: {:?}", response.status());
-            debug!("Response headers: {:?}", response.headers());
-            let response_body = response.text().unwrap();
 
-            debug!("Clone POST response: {}", response_body);
+            debug!(
+                "Response status = {} | Response headers = {:?}",
+                response.status(),
+                response.headers()
+            );
+
+            let mut stream = response.bytes_stream();
+
+            match stream.next().await {
+                Some(chunk_result) => {
+                    match chunk_result {
+                        Ok(chunk) => {
+                            debug!("Received chunk: {:?}", chunk);
+                            // You can process the chunk here as needed
+                        }
+                        Err(e) => {
+                            error!("Error receiving chunk: {:?}", e);
+                            // break;
+                        }
+                    }
+                }
+                None => debug!("No chunks received"),
+            }
+
+            // debug!("Response status: {:?}", response.status());
+            // debug!("Response headers: {:?}", response.headers());
+            // let response_body = response.text().unwrap();
+            // debug!("Clone POST response: {}", response_body);
 
             unimplemented!()
         }
