@@ -186,7 +186,7 @@ fn main() {
 
             let mut buf = Vec::new();
             response.read_to_end(&mut buf).unwrap();
-            debug!("Clone body: {:?}", buf);
+            // debug!("Clone body: {:?}", buf);
 
             debug!(
                 "Response status = {} | Response headers = {:?}",
@@ -194,9 +194,35 @@ fn main() {
                 response.headers(),
             );
 
+            parse_git_upload_pack_response(buf);
+
             unimplemented!()
         }
     }
+}
+
+fn parse_git_upload_pack_response(buf: Vec<u8>) {
+    let mut lines: Vec<Vec<u8>> = vec![];
+    let mut slice = &buf[..];
+
+    loop {
+        if slice.is_empty() {
+            break;
+        }
+
+        let len_str = str::from_utf8(&slice[..4]).unwrap();
+        dbg!(len_str);
+        let len = usize::from_str_radix(len_str, 16).unwrap();
+        if len == 0 {
+            break;
+        }
+
+        let line = slice[4..len].to_vec();
+        lines.push(line);
+        slice = &slice[len..];
+    }
+
+    // dbg!(lines);
 }
 
 fn write_payload(payload: Vec<u8>) -> Hash {
