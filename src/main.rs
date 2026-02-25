@@ -3,9 +3,12 @@ extern crate log;
 
 use clap::{Parser, Subcommand};
 use flate2::{Compression, write::ZlibEncoder};
-use futures_util::StreamExt;
 use sha1::{Digest, Sha1};
-use std::{collections::BTreeMap, fs, io::Write};
+use std::{
+    collections::BTreeMap,
+    fs,
+    io::{Read, Write},
+};
 
 use crate::common::{
     Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob,
@@ -55,8 +58,7 @@ struct Args {
     command: CliCommand,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     // unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
@@ -146,7 +148,7 @@ async fn main() {
         }
 
         CliCommand::Clone { url, .. } => {
-            let client = reqwest::Client::new();
+            let client = reqwest::blocking::Client::new();
 
             let get_head_sha_url = format!(
                 "{}{}",
@@ -154,13 +156,8 @@ async fn main() {
                 "/info/refs?service=git-upload-pack"
             );
             debug!("GET {}", get_head_sha_url);
-            let response = client
-                .get(get_head_sha_url)
-                // .header("Git-Protocol", "version=2")
-                .send()
-                .await
-                .unwrap();
-            let response_body = response.text().await.unwrap();
+            let response = client.get(get_head_sha_url).send().unwrap();
+            let response_body = response.text().unwrap();
 
             debug!("SHA reponse body: {}", response_body);
 
@@ -169,56 +166,34 @@ async fn main() {
             debug!("Clone sha1_head: {}", sha1_head_str);
 
             let want_content = format!(
-                // "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 sha1_head_str
             );
-            let want_payload = format!(
-                "{}{}0009done\n0000\n",
-                hex_len_prefixed_string("command=fetch\n"),
-                hex_len_prefixed_string(&want_content)
-            );
+            let want_payload =
+                format!("{}0009done\n0000\n", hex_len_prefixed_string(&want_content));
 
             debug!("Request payload: {}", want_payload);
 
             let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
             debug!("POST {}", want_url);
 
-            let response = client
+            let mut response = client
                 .post(&want_url)
                 .header("Content-Type", "application/x-git-upload-pack-request")
                 .header("Accept", "application/x-git-upload-pack-result")
-                // .header("Git-Protocol", "version=2")
                 .body(want_payload)
                 .send()
-                .await
                 .unwrap();
+
+            let mut buf = String::new();
+            response.read_to_string(&mut buf).unwrap();
+            debug!("Clone body: {}", buf);
 
             debug!(
                 "Response status = {} | Response headers = {:?}",
                 response.status(),
                 response.headers()
             );
-
-            let mut stream = response.bytes_stream();
-            match stream.next().await {
-                Some(chunk_result) => {
-                    match chunk_result {
-                        Ok(chunk) => {
-                            debug!("Received chunk: {:?}", chunk);
-                            // You can process the chunk here as needed
-                        }
-                        Err(e) => {
-                            error!("Error receiving chunk: {:?}", e);
-                            // break;
-                        }
-                    }
-                }
-                None => debug!("No chunks received"),
-            }
-
-            // let response_body = response.text().await.unwrap();
-            // debug!("Clone POST response size {}", response_body.len());
 
             unimplemented!()
         }
