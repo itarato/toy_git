@@ -169,8 +169,7 @@ fn main() {
                 "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 sha1_head_str
             );
-            let want_payload =
-                format!("{}0009done\n0000\n", hex_len_prefixed_string(&want_content));
+            let want_payload = format!("{}0009done\n0000", hex_len_prefixed_string(&want_content));
 
             debug!("Request payload: {}", want_payload);
 
@@ -185,9 +184,9 @@ fn main() {
                 .send()
                 .unwrap();
 
-            let mut buf = String::new();
-            response.read_to_string(&mut buf).unwrap();
-            debug!("Clone body: {}", buf);
+            let mut buf = Vec::new();
+            response.read_to_end(&mut buf).unwrap();
+            debug!("Clone body len {}", buf.len());
 
             debug!(
                 "Response status = {} | Response headers = {:?}",
