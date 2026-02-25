@@ -145,13 +145,21 @@ async fn main() {
             println!("{}", hash.hash);
         }
 
-        CliCommand::Clone { url, dir } => {
+        CliCommand::Clone { url, .. } => {
+            let client = reqwest::Client::new();
+
             let get_head_sha_url = format!(
                 "{}{}",
                 url.trim_end_matches('/'),
                 "/info/refs?service=git-upload-pack"
             );
-            let response = reqwest::get(get_head_sha_url).await.unwrap();
+            debug!("GET {}", get_head_sha_url);
+            let response = client
+                .get(get_head_sha_url)
+                // .header("Git-Protocol", "version=2")
+                .send()
+                .await
+                .unwrap();
             let response_body = response.text().await.unwrap();
 
             debug!("SHA reponse body: {}", response_body);
@@ -161,18 +169,26 @@ async fn main() {
             debug!("Clone sha1_head: {}", sha1_head_str);
 
             let want_content = format!(
+                // "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 sha1_head_str
             );
-            let want_payload = format!("{}00000009done", hex_len_prefixed_string(&want_content));
+            let want_payload = format!(
+                "{}{}0009done\n0000\n",
+                hex_len_prefixed_string("command=fetch\n"),
+                hex_len_prefixed_string(&want_content)
+            );
 
             debug!("Request payload: {}", want_payload);
 
             let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
-            let client = reqwest::Client::new();
+            debug!("POST {}", want_url);
+
             let response = client
                 .post(&want_url)
                 .header("Content-Type", "application/x-git-upload-pack-request")
+                .header("Accept", "application/x-git-upload-pack-result")
+                // .header("Git-Protocol", "version=2")
                 .body(want_payload)
                 .send()
                 .await
@@ -185,7 +201,6 @@ async fn main() {
             );
 
             let mut stream = response.bytes_stream();
-
             match stream.next().await {
                 Some(chunk_result) => {
                     match chunk_result {
@@ -202,10 +217,8 @@ async fn main() {
                 None => debug!("No chunks received"),
             }
 
-            // debug!("Response status: {:?}", response.status());
-            // debug!("Response headers: {:?}", response.headers());
-            // let response_body = response.text().unwrap();
-            // debug!("Clone POST response: {}", response_body);
+            // let response_body = response.text().await.unwrap();
+            // debug!("Clone POST response size {}", response_body.len());
 
             unimplemented!()
         }
