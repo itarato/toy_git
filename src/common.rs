@@ -15,6 +15,14 @@ pub(crate) fn bytes_to_string(bytes: &[u8]) -> String {
         .join("")
 }
 
+pub(crate) fn debug_byte_str(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(crate) fn hex_len_prefixed_string(s: &str) -> String {
     format!("{:04x}{}", s.len() + 4, s)
 }

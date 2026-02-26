@@ -10,11 +10,13 @@ use std::{
     io::{Read, Write},
 };
 
-use crate::common::{
-    Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob,
+use crate::{
+    common::{Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob},
+    pack::PackReader,
 };
 
 mod common;
+mod pack;
 mod reader;
 
 #[derive(Subcommand)]
@@ -194,16 +196,18 @@ fn main() {
                 response.headers(),
             );
 
-            parse_git_upload_pack_response(buf);
+            let pack = parse_git_upload_pack_response(buf);
+            PackReader::new(&pack[..]).read();
 
             unimplemented!()
         }
     }
 }
 
-fn parse_git_upload_pack_response(buf: Vec<u8>) {
+fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
     let mut lines: Vec<Vec<u8>> = vec![];
     let mut slice = &buf[..];
+    let mut pack = Vec::new();
 
     loop {
         if slice.is_empty() {
@@ -211,18 +215,40 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) {
         }
 
         let len_str = str::from_utf8(&slice[..4]).unwrap();
-        dbg!(len_str);
         let len = usize::from_str_radix(len_str, 16).unwrap();
         if len == 0 {
             break;
         }
 
         let line = slice[4..len].to_vec();
+
+        match line[0] {
+            1 => {
+                // Data.
+                debug!("Data line, len={}", line.len());
+                pack.extend_from_slice(&line[1..]);
+            }
+            2 => {
+                // Progress messages.
+                let progress_msg = String::from_utf8(line[1..].to_vec()).unwrap();
+                // debug!("Progress message: {}", progress_msg);
+            }
+            3 => {
+                panic!("Error line");
+            }
+            other => {
+                warn!("Error: Unknown line type {}", other);
+                let msg = String::from_utf8(line.clone()).unwrap();
+                debug!("Progress message: {}", msg);
+            }
+        }
+
         lines.push(line);
         slice = &slice[len..];
     }
 
     // dbg!(lines);
+    pack
 }
 
 fn write_payload(payload: Vec<u8>) -> Hash {
