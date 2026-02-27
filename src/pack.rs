@@ -7,6 +7,8 @@ use std::{
 pub(crate) enum PackObjectType {
     Commit,
     Tree,
+    Blob,
+    OffsetDelta,
 }
 
 pub(crate) struct PackObject {
@@ -80,6 +82,20 @@ impl<'a> PackReader<'a> {
 
                     self.dropn(encoded_len);
                 }
+                3 => {
+                    // Tree
+                    let (decoded, encoded_len) = self.decode_current();
+                    objects.insert(
+                        object_location,
+                        PackObject {
+                            kind: PackObjectType::Blob,
+                            compressed_payload: self.slice[..encoded_len].to_vec(),
+                            decompressed_payload: decoded,
+                        },
+                    );
+
+                    self.dropn(encoded_len);
+                }
                 6 => {
                     // OFS_DELTA
                     let offset = self.read_offset_varint();
@@ -87,9 +103,18 @@ impl<'a> PackReader<'a> {
                     debug!("OFS_DELTA offset: {}", offset);
 
                     let (decoded, encoded_len) = self.decode_current();
-                    debug!("OFS_DELTA decoded: {:?}", String::from_utf8(decoded));
+                    // debug!("OFS_DELTA decoded: {:?}", String::from_utf8(decoded));
 
-                    unimplemented!()
+                    objects.insert(
+                        object_location,
+                        PackObject {
+                            kind: PackObjectType::OffsetDelta,
+                            compressed_payload: vec![],
+                            decompressed_payload: vec![],
+                        },
+                    );
+
+                    self.dropn(encoded_len);
                 }
                 other => {
                     error!("Unknown object type: {}", other);
