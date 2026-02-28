@@ -37,6 +37,10 @@ impl Hash {
         Self { hash }
     }
 
+    pub(crate) fn from_bytes(bytes: [u8; 20]) -> Self {
+        Self::new(bytes_to_string(&bytes))
+    }
+
     pub(crate) fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
 
@@ -71,7 +75,8 @@ impl Hash {
     }
 
     pub(crate) fn read(&self) -> Entry {
-        let file = File::open(self.file_path()).unwrap();
+        let file = File::open(self.file_path())
+            .expect(&format!("Failed opening file: {}", self.file_path()));
         let mut decoder = ZlibDecoder::new(file);
         let mut content_buf = vec![];
         decoder.read_to_end(&mut content_buf).unwrap();

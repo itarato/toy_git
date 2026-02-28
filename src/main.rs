@@ -13,6 +13,7 @@ use std::{
 use crate::{
     common::{Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob},
     pack::{PackObject, PackObjectType, PackReader},
+    reader::Reader,
 };
 
 mod common;
@@ -145,7 +146,7 @@ fn main() {
 
             content.append(&mut suffix);
 
-            let hash = write_payload(content);
+            let hash = write_payload(&content[..]);
             println!("{}", hash.hash);
         }
 
@@ -198,7 +199,7 @@ fn main() {
 
             let pack = parse_git_upload_pack_response(buf);
             let objects = PackReader::new(&pack[..]).read();
-            clone_repo(dir, objects);
+            clone_repo(&dir, objects);
         }
     }
 }
@@ -250,7 +251,7 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
     pack
 }
 
-fn write_payload(payload: Vec<u8>) -> Hash {
+fn write_payload(payload: &[u8]) -> Hash {
     let mut hasher = Sha1::new();
     hasher.update(&payload);
     let hash = Hash::new(bytes_to_string(&hasher.finalize()));
@@ -265,7 +266,7 @@ fn write_payload(payload: Vec<u8>) -> Hash {
 }
 
 fn write_blob(file_path: &str) -> Hash {
-    write_payload(read_file_into_encoded_blob(file_path))
+    write_payload(&read_file_into_encoded_blob(file_path)[..])
 }
 
 fn write_tree(dir: &str) -> Hash {
@@ -314,18 +315,74 @@ fn write_tree(dir: &str) -> Hash {
     let mut bytes = format!("tree {}\0", entries.len()).as_bytes().to_vec();
     bytes.append(&mut entries);
 
-    write_payload(bytes)
+    write_payload(&bytes[..])
 }
 
-fn clone_repo(dir: String, objects: Vec<PackObject>) {
+fn parse_tree_payload(payload: &[u8], dir: &str) {
+    std::env::set_current_dir(&dir).unwrap();
+
+    let mut reader = Reader::new(payload);
+
+    while !reader.is_empty() {
+        let kind = reader.pop_while(|c| c != &b' ');
+        // dbg!(str::from_utf8(kind).unwrap());
+        assert_eq!(&b' ', reader.pop()); // space
+
+        match kind {
+            b"100644" => {
+                // File.
+                let filename_bytes = reader.pop_while(|c| c != &0);
+                let filename = str::from_utf8(filename_bytes).unwrap();
+                assert_eq!(&0, reader.pop()); // \0
+
+                let hash_bytes = reader.popn(20);
+                let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
+
+                match hash.read() {
+                    Entry::File { content } => {
+                        std::fs::create_dir_all(&dir).unwrap();
+                        let path = format!("{}/{}", dir, filename);
+                        std::fs::write(&path, content).unwrap();
+                    }
+                    _ => panic!(),
+                }
+            }
+            b"40000" => {
+                // Dir.
+                // let filename_bytes = reader.pop_while(|c| c != &0);
+                // let dirname = str::from_utf8(filename_bytes).unwrap();
+                // reader.pop(); // \0
+
+                // let hash_bytes = reader.popn(20);
+                // let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
+                // let entry = hash.read();
+            }
+            other => {
+                error!("Unexpected tree elem kind: {:?}", other);
+                panic!();
+            }
+        }
+    }
+
+    unimplemented!()
+}
+
+fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
     for object in objects {
         match object.kind {
-            PackObjectType::Commit => write_payload(object.decompressed_payload),
-            PackObjectType::Blob => write_payload(object.decompressed_payload),
-            PackObjectType::Tree => write_payload(object.decompressed_payload),
+            PackObjectType::Commit => {
+                write_payload(&object.decompressed_payload[..]);
+            }
+            PackObjectType::Blob => {
+                write_payload(&object.decompressed_payload[..]);
+            }
+            PackObjectType::Tree => {
+                write_payload(&object.decompressed_payload[..]);
+                parse_tree_payload(&object.decompressed_payload[..], dir);
+            }
         };
     }
 }
