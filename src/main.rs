@@ -318,6 +318,9 @@ fn write_tree(dir: &str) -> Hash {
 }
 
 fn clone_repo(dir: String, objects: Vec<PackObject>) {
+    std::fs::create_dir_all(&dir).unwrap();
+    std::env::set_current_dir(&dir).unwrap();
+
     for object in objects {
         match object.kind {
             PackObjectType::Commit => write_payload(object.decompressed_payload),
