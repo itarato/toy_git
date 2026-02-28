@@ -4,6 +4,8 @@ use std::{
     io::Read,
 };
 
+use crate::reader::Reader;
+
 pub(crate) enum PackObjectType {
     Commit,
     Tree,
@@ -104,6 +106,30 @@ impl<'a> PackReader<'a> {
 
                     let (decoded, encoded_len) = self.decode_current();
                     // debug!("OFS_DELTA decoded: {:?}", String::from_utf8(decoded));
+
+                    let mut decoded_reader = Reader::new(&decoded[..]);
+                    let base_size = decoded_reader.pop_varint();
+                    let result_size = decoded_reader.pop_varint();
+
+                    while !decoded_reader.is_empty() {
+                        let byte = decoded_reader.pop();
+
+                        match byte >> 7 {
+                            0 => {
+                                // Insert
+                                unimplemented!()
+                            }
+                            1 => {
+                                // Copy
+                                let offset_bits = byte & 0b1111;
+                                let size_bits = (byte >> 4) & 0b111;
+
+                                let offset = decoded_reader.pop_bit_masked_int();
+                                let size = decoded_reader.pop_bit_masked_int();
+                            }
+                            _ => panic!(),
+                        }
+                    }
 
                     objects.insert(
                         object_location,

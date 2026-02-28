@@ -48,3 +48,21 @@ impl<'a, T> Reader<'a, T> {
         self.stream.is_empty()
     }
 }
+
+impl<'a> Reader<'a, u8> {
+    pub(crate) fn pop_varint(&mut self) -> u64 {
+        let mut result = 0u64;
+
+        loop {
+            result <<= 7;
+            let byte = self.pop();
+            result |= (byte & 0b0111_1111) as u64;
+
+            if byte & 0b1000_0000 == 0 {
+                break;
+            }
+        }
+
+        result
+    }
+}
