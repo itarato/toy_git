@@ -3,16 +3,15 @@ use std::{collections::BTreeMap, io::Read};
 
 use crate::reader::Reader;
 
+#[derive(Clone, Copy)]
 pub(crate) enum PackObjectType {
     Commit,
     Tree,
     Blob,
-    OffsetDelta,
 }
 
 pub(crate) struct PackObject {
     pub(crate) kind: PackObjectType,
-    pub(crate) compressed_payload: Vec<u8>,
     pub(crate) decompressed_payload: Vec<u8>,
 }
 
@@ -60,7 +59,6 @@ impl<'a> PackReader<'a> {
                         object_location,
                         PackObject {
                             kind: PackObjectType::Commit,
-                            compressed_payload: self.slice[..encoded_len].to_vec(),
                             decompressed_payload: decoded,
                         },
                     );
@@ -74,7 +72,6 @@ impl<'a> PackReader<'a> {
                         object_location,
                         PackObject {
                             kind: PackObjectType::Tree,
-                            compressed_payload: self.slice[..encoded_len].to_vec(),
                             decompressed_payload: decoded,
                         },
                     );
@@ -88,7 +85,6 @@ impl<'a> PackReader<'a> {
                         object_location,
                         PackObject {
                             kind: PackObjectType::Blob,
-                            compressed_payload: self.slice[..encoded_len].to_vec(),
                             decompressed_payload: decoded,
                         },
                     );
@@ -143,8 +139,7 @@ impl<'a> PackReader<'a> {
                     objects.insert(
                         object_location,
                         PackObject {
-                            kind: PackObjectType::OffsetDelta,
-                            compressed_payload: vec![],
+                            kind: base_object.kind,
                             decompressed_payload: payload,
                         },
                     );
