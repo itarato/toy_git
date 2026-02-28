@@ -12,7 +12,7 @@ use std::{
 
 use crate::{
     common::{Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob},
-    pack::PackReader,
+    pack::{PackObject, PackObjectType, PackReader},
 };
 
 mod common;
@@ -149,7 +149,7 @@ fn main() {
             println!("{}", hash.hash);
         }
 
-        CliCommand::Clone { url, .. } => {
+        CliCommand::Clone { url, dir } => {
             let client = reqwest::blocking::Client::new();
 
             let get_head_sha_url = format!(
@@ -157,15 +157,15 @@ fn main() {
                 url.trim_end_matches('/'),
                 "/info/refs?service=git-upload-pack"
             );
-            debug!("GET {}", get_head_sha_url);
+            // debug!("GET {}", get_head_sha_url);
             let response = client.get(get_head_sha_url).send().unwrap();
             let response_body = response.text().unwrap();
 
-            debug!("SHA reponse body: {}", response_body);
+            // debug!("SHA reponse body: {}", response_body);
 
             let lines = response_body.lines().collect::<Vec<_>>();
             let sha1_head_str = lines[1][8..48].to_string();
-            debug!("Clone sha1_head: {}", sha1_head_str);
+            // debug!("Clone sha1_head: {}", sha1_head_str);
 
             let want_content = format!(
                 "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
@@ -173,10 +173,10 @@ fn main() {
             );
             let want_payload = format!("{}00000009done\n", hex_len_prefixed_string(&want_content));
 
-            debug!("Request payload: {}", want_payload);
+            // debug!("Request payload: {}", want_payload);
 
             let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
-            debug!("POST {}", want_url);
+            // debug!("POST {}", want_url);
 
             let mut response = client
                 .post(&want_url)
@@ -190,16 +190,15 @@ fn main() {
             response.read_to_end(&mut buf).unwrap();
             // debug!("Clone body: {:?}", buf);
 
-            debug!(
-                "Response status = {} | Response headers = {:?}",
-                response.status(),
-                response.headers(),
-            );
+            // debug!(
+            //     "Response status = {} | Response headers = {:?}",
+            //     response.status(),
+            //     response.headers(),
+            // );
 
             let pack = parse_git_upload_pack_response(buf);
-            PackReader::new(&pack[..]).read();
-
-            unimplemented!()
+            let objects = PackReader::new(&pack[..]).read();
+            clone_repo(dir, objects);
         }
     }
 }
@@ -225,7 +224,7 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
         match line[0] {
             1 => {
                 // Data.
-                debug!("Data line, len={}", line.len());
+                // debug!("Data line, len={}", line.len());
                 pack.extend_from_slice(&line[1..]);
             }
             2 => {
@@ -316,4 +315,14 @@ fn write_tree(dir: &str) -> Hash {
     bytes.append(&mut entries);
 
     write_payload(bytes)
+}
+
+fn clone_repo(dir: String, objects: Vec<PackObject>) {
+    for object in objects {
+        match object.kind {
+            PackObjectType::Commit => write_payload(object.decompressed_payload),
+            PackObjectType::Blob => write_payload(object.decompressed_payload),
+            PackObjectType::Tree => write_payload(object.decompressed_payload),
+        };
+    }
 }
