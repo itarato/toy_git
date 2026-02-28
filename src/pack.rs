@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, io::Read};
 
 use crate::reader::Reader;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PackObjectType {
     Commit,
     Tree,
@@ -113,14 +113,12 @@ impl<'a> PackReader<'a> {
                             0 => {
                                 // Insert
                                 let size = byte & 0b0111_1111;
-
                                 payload.extend_from_slice(decoded_reader.popn(size as usize));
                             }
                             1 => {
                                 // Copy
                                 let offset_bits = byte & 0b1111;
                                 let size_bits = (byte >> 4) & 0b111;
-
                                 let offset = decoded_reader.pop_bit_masked_int(offset_bits);
                                 let size = decoded_reader.pop_bit_masked_int(size_bits);
 
@@ -152,6 +150,25 @@ impl<'a> PackReader<'a> {
                 }
             };
         }
+
+        // for o in objects.values() {
+        //     if o.kind == PackObjectType::Blob {
+        //         // debug!(
+        //         //     "Blob: {:?}",
+        //         //     String::from_utf8(o.decompressed_payload.clone())
+        //         // );
+        //     } else if o.kind == PackObjectType::Tree {
+        //         // debug!(
+        //         //     "Tree: {:?}",
+        //         //     String::from_utf8(o.decompressed_payload.clone())
+        //         // );
+        //     } else if o.kind == PackObjectType::Commit {
+        //         // debug!(
+        //         //     "Commit: {:?}",
+        //         //     String::from_utf8(o.decompressed_payload.clone())
+        //         // );
+        //     }
+        // }
     }
 
     fn decode_current(&self) -> (Vec<u8>, usize) {
