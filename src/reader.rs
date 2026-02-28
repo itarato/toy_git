@@ -65,4 +65,35 @@ impl<'a> Reader<'a, u8> {
 
         result
     }
+
+    pub(crate) fn pop_bit_masked_int(&mut self, mut mask: u8) -> usize {
+        let mut out = 0;
+        let mut offset = 0;
+
+        while mask > 0 {
+            if mask & 1 == 1 {
+                out |= (*self.pop() as usize) << offset;
+            }
+
+            offset += 8;
+            mask >>= 1;
+        }
+
+        out
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::reader::Reader;
+
+    #[test]
+    fn test_pop_bit_masked_int() {
+        let v = vec![0b11010111u8, 0b01001011u8];
+        let mut reader = Reader::new(&v[..]);
+        assert_eq!(
+            0b01001011_00000000_11010111_00000000,
+            reader.pop_bit_masked_int(0b1010)
+        );
+    }
 }

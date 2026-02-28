@@ -1,8 +1,5 @@
 use flate2::read::ZlibDecoder;
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Read,
-};
+use std::{collections::BTreeMap, io::Read};
 
 use crate::reader::Reader;
 
@@ -111,21 +108,33 @@ impl<'a> PackReader<'a> {
                     let base_size = decoded_reader.pop_varint();
                     let result_size = decoded_reader.pop_varint();
 
+                    let mut payload = vec![];
+
                     while !decoded_reader.is_empty() {
                         let byte = decoded_reader.pop();
 
                         match byte >> 7 {
                             0 => {
                                 // Insert
-                                unimplemented!()
+                                let size = byte & 0b0111_1111;
+
+                                payload.extend_from_slice(decoded_reader.popn(size as usize));
                             }
                             1 => {
                                 // Copy
                                 let offset_bits = byte & 0b1111;
                                 let size_bits = (byte >> 4) & 0b111;
 
-                                let offset = decoded_reader.pop_bit_masked_int();
-                                let size = decoded_reader.pop_bit_masked_int();
+                                let offset = decoded_reader.pop_bit_masked_int(offset_bits);
+                                let size = decoded_reader.pop_bit_masked_int(size_bits);
+
+                                if size == 0 {
+                                    panic!("Lookup 0 case.");
+                                }
+
+                                payload.extend_from_slice(
+                                    &base_object.decompressed_payload[offset..offset + size],
+                                );
                             }
                             _ => panic!(),
                         }
@@ -136,7 +145,7 @@ impl<'a> PackReader<'a> {
                         PackObject {
                             kind: PackObjectType::OffsetDelta,
                             compressed_payload: vec![],
-                            decompressed_payload: vec![],
+                            decompressed_payload: payload,
                         },
                     );
 
