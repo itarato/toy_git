@@ -47,19 +47,10 @@ impl<'a> PackReader<'a> {
         let pack_object_count =
             u32::from_be_bytes(pack_object_count_bytes[..].try_into().unwrap()) as usize;
 
-        // debug!("Marker: {:?}", pack_marker);
-        // debug!("Version: {:?}", pack_version);
-        // debug!("Object Count: {:?}", pack_object_count);
-        // debug!("Pack Payload Size: {:?}", self.slice.len());
-
         for _ in 0..pack_object_count {
-            // debug!("At offset (pre meta): {}", self.slice_ptr);
             let object_location = self.slice_ptr;
             let object_type = (self.slice[0] >> 4) & 0b111;
             let _object_decompressed_size = self.read_varint(0b1000_1111);
-            // debug!("Payload decompressed size: {}", object_decompressed_size);
-            // debug!("Object type: {}", object_type);
-            // debug!("At offset (post meta): {}", self.slice_ptr);
 
             match object_type {
                 1 => {
@@ -105,16 +96,10 @@ impl<'a> PackReader<'a> {
                     // OFS_DELTA
                     let offset = self.read_offset_varint();
                     let base_object = objects.get(&(object_location - offset)).unwrap();
-                    // debug!("OFS_DELTA offset: {}", offset);
-
                     let (decoded, encoded_len) = self.decode_current();
-                    // debug!("OFS_DELTA decoded: {:?}", String::from_utf8(decoded));
-
                     let mut decoded_reader = Reader::new(&decoded[..]);
                     let _base_size = decoded_reader.pop_varint();
                     let _result_size = decoded_reader.pop_varint();
-
-                    // assert_eq!(result_size as usize, base_object.decompressed_payload.len());
 
                     let mut payload = vec![];
 
@@ -145,15 +130,6 @@ impl<'a> PackReader<'a> {
                             _ => panic!(),
                         }
                     }
-
-                    // assert_eq!(result_size as usize, payload.len());
-                    // debug!(
-                    //     "Expected: {} / {} Actual: {} / {}",
-                    //     base_size,
-                    //     result_size,
-                    //     base_object.decompressed_payload.len(),
-                    //     payload.len()
-                    // ); // TODO: something is wrong here.
 
                     objects.insert(
                         object_location,

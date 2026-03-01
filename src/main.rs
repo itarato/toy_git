@@ -64,15 +64,13 @@ struct Args {
 }
 
 fn main() {
-    unsafe { std::env::set_var("RUST_LOG", "debug") };
+    // unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
     let args = Args::parse();
 
     match args.command {
-        CliCommand::Init => {
-            git_init("./");
-        }
+        CliCommand::Init => git_init(),
 
         CliCommand::CatFile { parent_hash } => match Hash::new(parent_hash).read() {
             Entry::File { content } => print!("{}", content),
@@ -120,7 +118,7 @@ fn main() {
             // parent <parent_sha>
             // author <name> <<email>> <timestamp> <timezone>
             // committer <name> <<email>> <timestamp> <timezone>
-
+            //
             // <commit message>
 
             let mut suffix = vec![];
@@ -149,38 +147,22 @@ fn main() {
         }
 
         CliCommand::Clone { url, dir } => {
-            debug!(
-                "Start clone to: {:?} > {}",
-                std::env::current_dir().unwrap(),
-                dir
-            );
             let client = reqwest::blocking::Client::new();
-
             let get_head_sha_url = format!(
                 "{}{}",
                 url.trim_end_matches('/'),
                 "/info/refs?service=git-upload-pack"
             );
-            // debug!("GET {}", get_head_sha_url);
             let response = client.get(get_head_sha_url).send().unwrap();
             let response_body = response.text().unwrap();
-
-            // debug!("SHA reponse body: {}", response_body);
-
             let lines = response_body.lines().collect::<Vec<_>>();
             let sha1_head_str = lines[1][8..48].to_string();
-            // debug!("Clone sha1_head: {}", sha1_head_str);
-
             let want_content = format!(
                 "want {} multi_ack_detailed thin-pack side-band-64k ofs-delta\n",
                 sha1_head_str
             );
             let want_payload = format!("{}00000009done\n", hex_len_prefixed_string(&want_content));
-
-            // debug!("Request payload: {}", want_payload);
-
             let want_url = format!("{}{}", url.trim_end_matches('/'), "/git-upload-pack");
-            // debug!("POST {}", want_url);
 
             let mut response = client
                 .post(&want_url)
@@ -192,13 +174,6 @@ fn main() {
 
             let mut buf = Vec::new();
             response.read_to_end(&mut buf).unwrap();
-            // debug!("Clone body: {:?}", buf);
-
-            // debug!(
-            //     "Response status = {} | Response headers = {:?}",
-            //     response.status(),
-            //     response.headers(),
-            // );
 
             let pack = parse_git_upload_pack_response(buf);
             let objects = PackReader::new(&pack[..]).read();
@@ -207,9 +182,7 @@ fn main() {
     }
 }
 
-fn git_init(dir: &str) {
-    std::fs::create_dir_all(&dir).unwrap();
-
+fn git_init() {
     fs::create_dir(".git").unwrap();
     fs::create_dir(".git/objects").unwrap();
     fs::create_dir(".git/refs").unwrap();
@@ -239,16 +212,14 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
         match line[0] {
             1 => {
                 // Data.
-                // debug!("Data line, len={}", line.len());
                 pack.extend_from_slice(&line[1..]);
             }
             2 => {
                 // Progress messages.
-                // let progress_msg = String::from_utf8(line[1..].to_vec()).unwrap();
-                // debug!("Progress message: {}", progress_msg);
+                let _progress_msg = String::from_utf8(line[1..].to_vec()).unwrap();
             }
             3 => {
-                panic!("Error line");
+                unimplemented!("Error line not implemented");
             }
             other => {
                 let msg = String::from_utf8(line.clone()).unwrap();
@@ -336,11 +307,6 @@ fn write_tree(dir: &str) -> Hash {
 fn materialize_entity(entity: Entry, path: &str) {
     match entity {
         Entry::File { content } => {
-            debug!(
-                "Materializing file: {:?} > {}",
-                std::env::current_dir().unwrap(),
-                path
-            );
             let folder_path = std::path::Path::new(&path)
                 .parent()
                 .unwrap()
@@ -354,9 +320,7 @@ fn materialize_entity(entity: Entry, path: &str) {
         Entry::Tree {
             entries: subtree_entries,
         } => {
-            debug!("Materializing folder: {}", path);
             for tree_entry in subtree_entries {
-                // debug!("Tree entry => {:?}", &tree_entry);
                 let tree_entry_path = format!("{}/{}", path, tree_entry.filename);
                 materialize_entity(tree_entry.read(), &tree_entry_path);
             }
@@ -368,7 +332,7 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     std::fs::create_dir_all(dir).unwrap();
     std::env::set_current_dir(dir).unwrap();
 
-    git_init(dir);
+    git_init();
 
     let mut tree_hashes = vec![];
 
@@ -377,17 +341,14 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
         let hash = write_object_payload_to_file(
             &create_object_payload_from_content(&object.decompressed_payload[..], object.kind)[..],
         );
-        if object.kind == PackObjectType::Tree {
+
+        if object.kind == PackObjectType::Tree && tree_hashes.is_empty() {
             tree_hashes.push(hash);
         }
     }
 
     // Expand tree.
-    debug!("Materializing {} tree hashes", tree_hashes.len());
-    for tree_hash in tree_hashes {
-        // debug!("-- MATERIALIZE TREE HASH --");
+    if let Some(tree_hash) = tree_hashes.first() {
         materialize_entity(tree_hash.read(), ".");
-
-        break;
     }
 }
