@@ -1,11 +1,9 @@
+use crate::{pack::PackObjectType, reader::Reader};
+use flate2::read::ZlibDecoder;
 use std::{
     fs::{self, File},
     io::{Read, Write},
 };
-
-use flate2::read::ZlibDecoder;
-
-use crate::reader::Reader;
 
 pub(crate) fn bytes_to_string(bytes: &[u8]) -> String {
     bytes
@@ -131,15 +129,23 @@ impl Hash {
     }
 }
 
-pub(crate) fn read_file_into_encoded_blob(file_path: &str) -> Vec<u8> {
+pub(crate) fn create_object_blob_payload_from_file(
+    file_path: &str,
+    kind: PackObjectType,
+) -> Vec<u8> {
     let mut file = fs::File::open(file_path).unwrap();
-    let mut content_suffix = vec![];
-    file.read_to_end(&mut content_suffix).unwrap();
-    let mut content = format!("blob {}", content_suffix.len()).as_bytes().to_vec();
-    content.push(0);
-    content.append(&mut content_suffix);
+    let mut content = vec![];
+    file.read_to_end(&mut content).unwrap();
+    create_object_payload_from_content(&content[..], kind)
+}
 
-    content
+pub(crate) fn create_object_payload_from_content(content: &[u8], kind: PackObjectType) -> Vec<u8> {
+    let mut payload = format!("{} {}", kind.to_string(), content.len())
+        .as_bytes()
+        .to_vec();
+    payload.push(0);
+    payload.extend_from_slice(content);
+    payload
 }
 
 #[derive(Debug)]

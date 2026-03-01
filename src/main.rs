@@ -11,7 +11,10 @@ use std::{
 };
 
 use crate::{
-    common::{Entry, Hash, bytes_to_string, hex_len_prefixed_string, read_file_into_encoded_blob},
+    common::{
+        Entry, Hash, bytes_to_string, create_object_blob_payload_from_file,
+        create_object_payload_from_content, hex_len_prefixed_string,
+    },
     pack::{PackObject, PackObjectType, PackReader},
     reader::Reader,
 };
@@ -82,7 +85,7 @@ fn main() {
         },
 
         CliCommand::HashObject { file_path } => {
-            let hash = write_blob(&file_path);
+            let hash = write_object_file_from_file(&file_path);
             println!("{}", hash.hash);
         }
 
@@ -146,7 +149,7 @@ fn main() {
 
             content.append(&mut suffix);
 
-            let hash = write_payload(&content[..]);
+            let hash = write_object_payload_to_file(&content[..]);
             println!("{}", hash.hash);
         }
 
@@ -230,16 +233,15 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
             }
             2 => {
                 // Progress messages.
-                let progress_msg = String::from_utf8(line[1..].to_vec()).unwrap();
+                // let progress_msg = String::from_utf8(line[1..].to_vec()).unwrap();
                 // debug!("Progress message: {}", progress_msg);
             }
             3 => {
                 panic!("Error line");
             }
             other => {
-                warn!("Error: Unknown line type {}", other);
                 let msg = String::from_utf8(line.clone()).unwrap();
-                debug!("Progress message: {}", msg);
+                warn!("Unknown line type {} -> message = {}", other, msg);
             }
         }
 
@@ -251,7 +253,7 @@ fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
     pack
 }
 
-fn write_payload(payload: &[u8]) -> Hash {
+fn write_object_payload_to_file(payload: &[u8]) -> Hash {
     let mut hasher = Sha1::new();
     hasher.update(&payload);
     let hash = Hash::new(bytes_to_string(&hasher.finalize()));
@@ -265,8 +267,10 @@ fn write_payload(payload: &[u8]) -> Hash {
     hash
 }
 
-fn write_blob(file_path: &str) -> Hash {
-    write_payload(&read_file_into_encoded_blob(file_path)[..])
+fn write_object_file_from_file(file_path: &str) -> Hash {
+    write_object_payload_to_file(
+        &create_object_blob_payload_from_file(file_path, PackObjectType::Blob)[..],
+    )
 }
 
 fn write_tree(dir: &str) -> Hash {
@@ -292,7 +296,7 @@ fn write_tree(dir: &str) -> Hash {
             bytes.extend_from_slice(&hash.as_bytes());
             bytes
         } else {
-            let hash = write_blob(&path.to_string_lossy());
+            let hash = write_object_file_from_file(&path.to_string_lossy());
 
             bytes.extend_from_slice(b"100644 ");
             bytes.extend_from_slice(path.file_name().unwrap().to_string_lossy().as_bytes());
@@ -315,7 +319,7 @@ fn write_tree(dir: &str) -> Hash {
     let mut bytes = format!("tree {}\0", entries.len()).as_bytes().to_vec();
     bytes.append(&mut entries);
 
-    write_payload(&bytes[..])
+    write_object_payload_to_file(&bytes[..])
 }
 
 fn parse_tree_payload(payload: &[u8], dir: &str) {
@@ -333,6 +337,7 @@ fn parse_tree_payload(payload: &[u8], dir: &str) {
                 // File.
                 let filename_bytes = reader.pop_while(|c| c != &0);
                 let filename = str::from_utf8(filename_bytes).unwrap();
+                debug!("Recreating tree file: {}", filename);
                 assert_eq!(&0, reader.pop()); // \0
 
                 let hash_bytes = reader.popn(20);
@@ -346,6 +351,8 @@ fn parse_tree_payload(payload: &[u8], dir: &str) {
                     }
                     _ => panic!(),
                 }
+
+                unimplemented!()
             }
             b"40000" => {
                 // Dir.
@@ -356,6 +363,7 @@ fn parse_tree_payload(payload: &[u8], dir: &str) {
                 // let hash_bytes = reader.popn(20);
                 // let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
                 // let entry = hash.read();
+                unimplemented!()
             }
             other => {
                 error!("Unexpected tree elem kind: {:?}", other);
@@ -374,13 +382,23 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     for object in objects {
         match object.kind {
             PackObjectType::Commit => {
-                write_payload(&object.decompressed_payload[..]);
+                write_object_payload_to_file(
+                    &create_object_payload_from_content(
+                        &object.decompressed_payload[..],
+                        PackObjectType::Commit,
+                    )[..],
+                );
             }
             PackObjectType::Blob => {
-                write_payload(&object.decompressed_payload[..]);
+                write_object_payload_to_file(
+                    &create_object_payload_from_content(
+                        &object.decompressed_payload[..],
+                        PackObjectType::Blob,
+                    )[..],
+                );
             }
             PackObjectType::Tree => {
-                write_payload(&object.decompressed_payload[..]);
+                write_object_payload_to_file(&object.decompressed_payload[..]);
                 parse_tree_payload(&object.decompressed_payload[..], dir);
             }
         };

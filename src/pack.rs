@@ -10,6 +10,16 @@ pub(crate) enum PackObjectType {
     Blob,
 }
 
+impl PackObjectType {
+    pub(crate) fn to_string(&self) -> &'static str {
+        match self {
+            PackObjectType::Commit => "commit",
+            PackObjectType::Tree => "tree",
+            PackObjectType::Blob => "blob",
+        }
+    }
+}
+
 pub(crate) struct PackObject {
     pub(crate) kind: PackObjectType,
     pub(crate) decompressed_payload: Vec<u8>,
