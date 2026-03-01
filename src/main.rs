@@ -365,8 +365,8 @@ fn materialize_entity(entity: Entry, path: &str) {
 }
 
 fn clone_repo(dir: &str, objects: Vec<PackObject>) {
-    std::fs::create_dir_all(&dir).unwrap();
-    std::env::set_current_dir(&dir).unwrap();
+    std::fs::create_dir_all(dir).unwrap();
+    std::env::set_current_dir(dir).unwrap();
 
     git_init(dir);
 
@@ -386,7 +386,7 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     debug!("Materializing {} tree hashes", tree_hashes.len());
     for tree_hash in tree_hashes {
         // debug!("-- MATERIALIZE TREE HASH --");
-        materialize_entity(tree_hash.read(), dir);
+        materialize_entity(tree_hash.read(), ".");
 
         break;
     }
