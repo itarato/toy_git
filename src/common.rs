@@ -13,6 +13,7 @@ pub(crate) fn bytes_to_string(bytes: &[u8]) -> String {
         .join("")
 }
 
+#[allow(unused)]
 pub(crate) fn debug_byte_str(bytes: &[u8]) -> String {
     bytes
         .iter()
@@ -35,6 +36,7 @@ impl Hash {
         Self { hash }
     }
 
+    #[allow(unused)]
     pub(crate) fn from_bytes(bytes: [u8; 20]) -> Self {
         Self::new(bytes_to_string(&bytes))
     }

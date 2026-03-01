@@ -16,7 +16,6 @@ use crate::{
         create_object_payload_from_content, hex_len_prefixed_string,
     },
     pack::{PackObject, PackObjectType, PackReader},
-    reader::Reader,
 };
 
 mod common;
@@ -65,18 +64,14 @@ struct Args {
 }
 
 fn main() {
-    // unsafe { std::env::set_var("RUST_LOG", "debug") };
+    unsafe { std::env::set_var("RUST_LOG", "debug") };
     pretty_env_logger::init();
 
     let args = Args::parse();
 
     match args.command {
         CliCommand::Init => {
-            fs::create_dir(".git").unwrap();
-            fs::create_dir(".git/objects").unwrap();
-            fs::create_dir(".git/refs").unwrap();
-            fs::write(".git/HEAD", "ref: refs/heads/main\n").unwrap();
-            info!("Initialized git directory")
+            git_init("./");
         }
 
         CliCommand::CatFile { parent_hash } => match Hash::new(parent_hash).read() {
@@ -154,6 +149,11 @@ fn main() {
         }
 
         CliCommand::Clone { url, dir } => {
+            debug!(
+                "Start clone to: {:?} > {}",
+                std::env::current_dir().unwrap(),
+                dir
+            );
             let client = reqwest::blocking::Client::new();
 
             let get_head_sha_url = format!(
@@ -205,6 +205,17 @@ fn main() {
             clone_repo(&dir, objects);
         }
     }
+}
+
+fn git_init(dir: &str) {
+    std::fs::create_dir_all(&dir).unwrap();
+
+    fs::create_dir(".git").unwrap();
+    fs::create_dir(".git/objects").unwrap();
+    fs::create_dir(".git/refs").unwrap();
+    fs::write(".git/HEAD", "ref: refs/heads/main\n").unwrap();
+
+    info!("Initialized git directory")
 }
 
 fn parse_git_upload_pack_response(buf: Vec<u8>) -> Vec<u8> {
@@ -325,7 +336,11 @@ fn write_tree(dir: &str) -> Hash {
 fn materialize_entity(entity: Entry, path: &str) {
     match entity {
         Entry::File { content } => {
-            debug!("Materializing file: {}", path);
+            debug!(
+                "Materializing file: {:?} > {}",
+                std::env::current_dir().unwrap(),
+                path
+            );
             let folder_path = std::path::Path::new(&path)
                 .parent()
                 .unwrap()
@@ -341,7 +356,7 @@ fn materialize_entity(entity: Entry, path: &str) {
         } => {
             debug!("Materializing folder: {}", path);
             for tree_entry in subtree_entries {
-                debug!("Tree entry => {:?}", &tree_entry);
+                // debug!("Tree entry => {:?}", &tree_entry);
                 let tree_entry_path = format!("{}/{}", path, tree_entry.filename);
                 materialize_entity(tree_entry.read(), &tree_entry_path);
             }
@@ -352,6 +367,8 @@ fn materialize_entity(entity: Entry, path: &str) {
 fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_current_dir(&dir).unwrap();
+
+    git_init(dir);
 
     let mut tree_hashes = vec![];
 
@@ -368,7 +385,7 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     // Expand tree.
     debug!("Materializing {} tree hashes", tree_hashes.len());
     for tree_hash in tree_hashes {
-        debug!("-- MATERIALIZE TREE HASH --");
+        // debug!("-- MATERIALIZE TREE HASH --");
         materialize_entity(tree_hash.read(), dir);
 
         break;

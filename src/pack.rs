@@ -41,8 +41,8 @@ impl<'a> PackReader<'a> {
     pub fn read(mut self) -> Vec<PackObject> {
         let mut objects = BTreeMap::new();
 
-        let pack_marker = self.popn(4);
-        let pack_version = self.popn(4);
+        let _pack_marker = self.popn(4);
+        let _pack_version = self.popn(4);
         let pack_object_count_bytes = self.popn(4);
         let pack_object_count =
             u32::from_be_bytes(pack_object_count_bytes[..].try_into().unwrap()) as usize;
@@ -56,7 +56,7 @@ impl<'a> PackReader<'a> {
             // debug!("At offset (pre meta): {}", self.slice_ptr);
             let object_location = self.slice_ptr;
             let object_type = (self.slice[0] >> 4) & 0b111;
-            let object_decompressed_size = self.read_varint(0b1000_1111);
+            let _object_decompressed_size = self.read_varint(0b1000_1111);
             // debug!("Payload decompressed size: {}", object_decompressed_size);
             // debug!("Object type: {}", object_type);
             // debug!("At offset (post meta): {}", self.slice_ptr);
@@ -111,8 +111,8 @@ impl<'a> PackReader<'a> {
                     // debug!("OFS_DELTA decoded: {:?}", String::from_utf8(decoded));
 
                     let mut decoded_reader = Reader::new(&decoded[..]);
-                    let base_size = decoded_reader.pop_varint();
-                    let result_size = decoded_reader.pop_varint();
+                    let _base_size = decoded_reader.pop_varint();
+                    let _result_size = decoded_reader.pop_varint();
 
                     // assert_eq!(result_size as usize, base_object.decompressed_payload.len());
 
@@ -171,25 +171,6 @@ impl<'a> PackReader<'a> {
                 }
             };
         }
-
-        // for o in objects.values() {
-        //     if o.kind == PackObjectType::Blob {
-        //         // debug!(
-        //         //     "Blob: {:?}",
-        //         //     String::from_utf8(o.decompressed_payload.clone())
-        //         // );
-        //     } else if o.kind == PackObjectType::Tree {
-        //         // debug!(
-        //         //     "Tree: {:?}",
-        //         //     String::from_utf8(o.decompressed_payload.clone())
-        //         // );
-        //     } else if o.kind == PackObjectType::Commit {
-        //         // debug!(
-        //         //     "Commit: {:?}",
-        //         //     String::from_utf8(o.decompressed_payload.clone())
-        //         // );
-        //     }
-        // }
 
         objects.into_values().collect()
     }
