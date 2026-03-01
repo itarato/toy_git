@@ -325,19 +325,23 @@ fn write_tree(dir: &str) -> Hash {
 fn materialize_entity(entity: Entry, path: &str) {
     match entity {
         Entry::File { content } => {
+            debug!("Materializing file: {}", path);
             let folder_path = std::path::Path::new(&path)
                 .parent()
                 .unwrap()
                 .to_string_lossy();
             std::fs::create_dir_all(folder_path.as_ref()).unwrap();
-            std::fs::write(&path, content).unwrap();
-            // debug!("Materializing file: {}", path);
+            std::fs::write(&path, content).expect(&format!(
+                "Failed writing file to: {} in folder: {}",
+                path, folder_path
+            ));
         }
         Entry::Tree {
             entries: subtree_entries,
         } => {
-            // debug!("Materializing folder: {}", path);
+            debug!("Materializing folder: {}", path);
             for tree_entry in subtree_entries {
+                debug!("Tree entry => {:?}", &tree_entry);
                 let tree_entry_path = format!("{}/{}", path, tree_entry.filename);
                 materialize_entity(tree_entry.read(), &tree_entry_path);
             }
@@ -362,8 +366,11 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     }
 
     // Expand tree.
+    debug!("Materializing {} tree hashes", tree_hashes.len());
     for tree_hash in tree_hashes {
-        std::env::set_current_dir(&dir).unwrap();
+        debug!("-- MATERIALIZE TREE HASH --");
         materialize_entity(tree_hash.read(), dir);
+
+        break;
     }
 }
