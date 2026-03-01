@@ -166,6 +166,10 @@ impl TreeEntry {
             }
         }
     }
+
+    pub(crate) fn read(&self) -> Entry {
+        self.hash.read()
+    }
 }
 
 pub(crate) enum Entry {

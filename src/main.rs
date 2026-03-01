@@ -351,18 +351,33 @@ fn parse_tree_payload(payload: &[u8], dir: &str) {
                     }
                     _ => panic!(),
                 }
-
-                unimplemented!()
             }
             b"40000" => {
                 // Dir.
-                // let filename_bytes = reader.pop_while(|c| c != &0);
-                // let dirname = str::from_utf8(filename_bytes).unwrap();
-                // reader.pop(); // \0
+                let dirname_bytes = reader.pop_while(|c| c != &0);
+                let dirname = str::from_utf8(dirname_bytes).unwrap();
+                reader.pop(); // \0
 
-                // let hash_bytes = reader.popn(20);
-                // let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
-                // let entry = hash.read();
+                let hash_bytes = reader.popn(20);
+                let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
+
+                match hash.read() {
+                    Entry::Tree { entries } => {
+                        let subdir = format!("{}/{}", dir, dirname);
+                        std::env::set_current_dir(&subdir).unwrap();
+
+                        for entry in entries {
+                            match entry {
+                                Entry::File { content } => unimplemented!(),
+                                Entry::Tree {
+                                    entries: subtree_entries,
+                                } => unimplemented!(),
+                            }
+                        }
+                    }
+                    _ => panic!(),
+                }
+
                 unimplemented!()
             }
             other => {
@@ -379,28 +394,21 @@ fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
-    for object in objects {
+    // Create objects.
+    for object in &objects {
+        write_object_payload_to_file(
+            &create_object_payload_from_content(&object.decompressed_payload[..], object.kind)[..],
+        );
+    }
+
+    // Expand tree.
+    for object in &objects {
         match object.kind {
-            PackObjectType::Commit => {
-                write_object_payload_to_file(
-                    &create_object_payload_from_content(
-                        &object.decompressed_payload[..],
-                        PackObjectType::Commit,
-                    )[..],
-                );
-            }
-            PackObjectType::Blob => {
-                write_object_payload_to_file(
-                    &create_object_payload_from_content(
-                        &object.decompressed_payload[..],
-                        PackObjectType::Blob,
-                    )[..],
-                );
-            }
             PackObjectType::Tree => {
                 write_object_payload_to_file(&object.decompressed_payload[..]);
                 parse_tree_payload(&object.decompressed_payload[..], dir);
             }
+            _ => { /* noop */ }
         };
     }
 }
