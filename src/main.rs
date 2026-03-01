@@ -322,93 +322,48 @@ fn write_tree(dir: &str) -> Hash {
     write_object_payload_to_file(&bytes[..])
 }
 
-fn parse_tree_payload(payload: &[u8], dir: &str) {
-    std::env::set_current_dir(&dir).unwrap();
-
-    let mut reader = Reader::new(payload);
-
-    while !reader.is_empty() {
-        let kind = reader.pop_while(|c| c != &b' ');
-        // dbg!(str::from_utf8(kind).unwrap());
-        assert_eq!(&b' ', reader.pop()); // space
-
-        match kind {
-            b"100644" => {
-                // File.
-                let filename_bytes = reader.pop_while(|c| c != &0);
-                let filename = str::from_utf8(filename_bytes).unwrap();
-                debug!("Recreating tree file: {}", filename);
-                assert_eq!(&0, reader.pop()); // \0
-
-                let hash_bytes = reader.popn(20);
-                let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
-
-                match hash.read() {
-                    Entry::File { content } => {
-                        std::fs::create_dir_all(&dir).unwrap();
-                        let path = format!("{}/{}", dir, filename);
-                        std::fs::write(&path, content).unwrap();
-                    }
-                    _ => panic!(),
-                }
-            }
-            b"40000" => {
-                // Dir.
-                let dirname_bytes = reader.pop_while(|c| c != &0);
-                let dirname = str::from_utf8(dirname_bytes).unwrap();
-                reader.pop(); // \0
-
-                let hash_bytes = reader.popn(20);
-                let hash = Hash::from_bytes(hash_bytes.try_into().unwrap());
-
-                match hash.read() {
-                    Entry::Tree { entries } => {
-                        let subdir = format!("{}/{}", dir, dirname);
-                        std::env::set_current_dir(&subdir).unwrap();
-
-                        for entry in entries {
-                            match entry {
-                                Entry::File { content } => unimplemented!(),
-                                Entry::Tree {
-                                    entries: subtree_entries,
-                                } => unimplemented!(),
-                            }
-                        }
-                    }
-                    _ => panic!(),
-                }
-
-                unimplemented!()
-            }
-            other => {
-                error!("Unexpected tree elem kind: {:?}", other);
-                panic!();
+fn materialize_entity(entity: Entry, path: &str) {
+    match entity {
+        Entry::File { content } => {
+            let folder_path = std::path::Path::new(&path)
+                .parent()
+                .unwrap()
+                .to_string_lossy();
+            std::fs::create_dir_all(folder_path.as_ref()).unwrap();
+            std::fs::write(&path, content).unwrap();
+            // debug!("Materializing file: {}", path);
+        }
+        Entry::Tree {
+            entries: subtree_entries,
+        } => {
+            // debug!("Materializing folder: {}", path);
+            for tree_entry in subtree_entries {
+                let tree_entry_path = format!("{}/{}", path, tree_entry.filename);
+                materialize_entity(tree_entry.read(), &tree_entry_path);
             }
         }
     }
-
-    unimplemented!()
 }
 
 fn clone_repo(dir: &str, objects: Vec<PackObject>) {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
+    let mut tree_hashes = vec![];
+
     // Create objects.
     for object in &objects {
-        write_object_payload_to_file(
+        let hash = write_object_payload_to_file(
             &create_object_payload_from_content(&object.decompressed_payload[..], object.kind)[..],
         );
+        if object.kind == PackObjectType::Tree {
+            tree_hashes.push(hash);
+        }
     }
 
     // Expand tree.
-    for object in &objects {
-        match object.kind {
-            PackObjectType::Tree => {
-                write_object_payload_to_file(&object.decompressed_payload[..]);
-                parse_tree_payload(&object.decompressed_payload[..], dir);
-            }
-            _ => { /* noop */ }
-        };
+    for tree_hash in tree_hashes {
+        std::env::set_current_dir(&dir).unwrap();
+        materialize_entity(tree_hash.read(), dir);
     }
 }
